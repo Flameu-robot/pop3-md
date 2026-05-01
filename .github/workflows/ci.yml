@@ -1,0 +1,82 @@
+name: POP3 Client Test
+
+on: [push, pull_request]
+
+jobs:
+
+  linux:
+    name: Build & Test (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install OpenSSL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libssl-dev
+          gcc --version
+          openssl version
+
+      - name: Compile
+        run: |
+          gcc -Wall -Wextra -o client src/client.c -lssl -lcrypto
+          ls -lh client
+
+      - name: Test — Show usage
+        run: ./client || true
+
+      - name: Test — Bad credentials (expect auth fail)
+        run: |
+          echo "Testing with fake credentials (should fail auth):"
+          timeout 20 ./client fake@gmail.com fakepass 2>&1 | tee test.log || true
+          
+          if grep -q "SSL connected" test.log; then
+            echo " SSL handshake succeeded"
+          else
+            echo " SSL handshake failed (network issue?)"
+          fi
+          
+          if grep -q "+OK" test.log; then
+            echo " Got server greeting"
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            client
+            test.log
+
+  windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-openssl
+
+      - name: Compile
+        shell: msys2 {0}
+        run: |
+          gcc -Wall -Wextra -o client.exe src/client.c -lssl -lcrypto -lws2_32
+          ls -lh client.exe
+
+      - name: Test — Show usage
+        shell: msys2 {0}
+        run: ./client.exe || true
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: client.exe
