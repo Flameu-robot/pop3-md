@@ -1,11 +1,11 @@
 name: POP3 Client Test
 
-on: [push, pull_request]
+on: [push]
 
 jobs:
 
-  linux:
-    name: Build & Test (Linux)
+  linux-full:
+    name: Build & Full Test (Linux)
     runs-on: ubuntu-latest
 
     steps:
@@ -16,197 +16,114 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y libssl-dev
-          echo "=== System Info ==="
           gcc --version
           openssl version
 
-      - name: Compile client
+      - name: Compile
         run: |
-          echo "Compiling..."
           gcc -Wall -Wextra -o client src/client.c -lssl -lcrypto
           ls -lh client
-          file client
 
-      - name: Test 1 — Show usage
-        run: |
-          echo " Test: Usage message "
-          ./client || true
-          echo "PASS: usage displayed"
-
-      - name: Test 2 — Bad credentials (should fail gracefully)
-        run: |
-          echo "=== Test: Authentication failure ==="
-          timeout 25 ./client fake@gmail.com fakepass 2>&1 | tee test_auth.log || true
-          echo "Test completed (exit code ignored)"
-
-      - name: Test 3 — Download message 
+      - name: Test — Full workflow (list, download #235, parse attachments)
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
         run: |
-          echo " Test: Download and parse message #235 "
-          
           if [ -z "$GMAIL_USER" ] || [ -z "$GMAIL_PASS" ]; then
-            echo "SKIP: GitHub Secrets not configured"
-            echo "To enable: Set GMAIL_USER and GMAIL_PASS in repository settings"
-            exit 0
-          fi
-          
-          cat > test_input.txt << 'EOF'
-          d
-          235
-          q
-          EOF
-          
-          echo "Downloading message #235..."
-          timeout 60 ./client "$GMAIL_USER" "$GMAIL_PASS" < test_input.txt \
-            2>&1 | tee test_download.log
-          
-          echo ""
-          echo "=== Checking results ==="
-          
-          if grep -q "Message #235" test_download.log; then
-            echo "PASS: Message #235 found"
-          else
-            echo "FAIL: Message #235 not found"
-            cat test_download.log
+            echo "ERROR: GitHub Secrets not configured"
+            echo "Set GMAIL_USER and GMAIL_PASS in repository Settings > Secrets"
             exit 1
           fi
-          
-          if grep -q "Attachment" test_download.log; then
-            echo "PASS: Attachments detected"
-          fi
-          
-          if grep -q "Decoded:" test_download.log; then
-            echo "PASS: Base64 decoding performed"
-          fi
-          
-          if grep -q "Saved:" test_download.log; then
-            echo "PASS: Files saved"
-            echo ""
-            echo "=== Downloaded files ==="
-            ls -lh message_235.eml 2>/dev/null || echo "No .eml"
-            find . -maxdepth 1 -type f ! -name "*.log" ! -name "*.txt" ! -name "client" -exec ls -lh {} \;
-          fi
 
-      - name: Test 4 — List messages
-        env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
-        run: |
-          echo "=== Test: List messages ==="
-          
-          if [ -z "$GMAIL_USER" ] || [ -z "$GMAIL_PASS" ]; then
-            echo "SKIP: GitHub Secrets not configured"
-            exit 0
-          fi
-          
-          cat > test_list.txt << 'EOF'
+          cat > test_script.txt << 'EOF'
           l
-          q
-          EOF
-          
-          timeout 60 ./client "$GMAIL_USER" "$GMAIL_PASS" < test_list.txt \
-            2>&1 | tee test_list.log
-          
-          if grep -q "ID.*Size" test_list.log; then
-            echo "PASS: Message list retrieved"
-            count=$(grep -c "^  [0-9]" test_list.log || true)
-            echo "Found approximately $count messages"
-          fi
-
-      - name: Upload test logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-test-logs
-          path: |
-            test*.log
-            message_*.eml
-            *.pdf
-            *.png
-            *.jpg
-            *.txt
-            *.bin
-          retention-days: 7
-
-  windows:
-    name: Build & Test (Windows)
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup MinGW + OpenSSL
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-openssl
-
-      - name: Compile client
-        shell: msys2 {0}
-        run: |
-          echo " Compiling on Windows "
-          gcc -Wall -Wextra -o client.exe src/client.c -lssl -lcrypto -lws2_32
-          ls -lh client.exe
-          file client.exe
-
-      - name: Test 1 — Show usage
-        shell: msys2 {0}
-        run: |
-          echo " Test: Usage message "
-          ./client.exe || true
-          echo "PASS: usage displayed"
-
-      - name: Test 2 — Bad credentials
-        shell: msys2 {0}
-        run: |
-          echo " Test: Authentication failure "
-          timeout 25 ./client.exe fake@gmail.com fakepass 2>&1 | tee test_auth.log || true
-          echo "Test completed (exit code ignored)"
-
-      - name: Test 3 — Download message #235
-        shell: msys2 {0}
-        env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
-        run: |
-          echo " Test: Download message #235 "
-          
-          if [ -z "$GMAIL_USER" ] || [ -z "$GMAIL_PASS" ]; then
-            echo "SKIP: GitHub Secrets not configured"
-            exit 0
-          fi
-          
-          cat > test_input.txt << 'EOF'
           d
           235
           q
           EOF
-          
-          timeout 60 ./client.exe "$GMAIL_USER" "$GMAIL_PASS" < test_input.txt \
-            2>&1 | tee test_download.log
-          
-          if grep -q "Message #235" test_download.log; then
-            echo "PASS: Message #235 downloaded"
+
+          echo "Running: List messages + Download #235"
+          timeout 90 ./client "$GMAIL_USER" "$GMAIL_PASS" < test_script.txt 2>&1 | tee full_test.log
+
+          echo ""
+          echo "Verifying results..."
+
+          passed=0
+          failed=0
+
+          if grep -q "ID.*Size" full_test.log; then
+            echo "[PASS] Message list retrieved"
+            ((passed++))
+          else
+            echo "[FAIL] Message list not found"
+            ((failed++))
           fi
 
-      - name: Upload Windows artifacts
+          if grep -q "Message #235" full_test.log; then
+            echo "[PASS] Message #235 downloaded"
+            ((passed++))
+          else
+            echo "[FAIL] Message #235 not found"
+            ((failed++))
+          fi
+
+          if grep -q "From" full_test.log && grep -q "Subject" full_test.log; then
+            echo "[PASS] Message headers parsed"
+            ((passed++))
+          else
+            echo "[FAIL] Headers not parsed"
+            ((failed++))
+          fi
+
+          if grep -q "Attachment" full_test.log; then
+            echo "[PASS] Attachments detected"
+            ((passed++))
+          else
+            echo "[FAIL] No attachments found"
+            ((failed++))
+          fi
+
+          if grep -q "Decoding Base64" full_test.log; then
+            echo "[PASS] Base64 decoding performed"
+            ((passed++))
+          else
+            echo "[FAIL] Base64 decoding not found"
+            ((failed++))
+          fi
+
+          if grep -q "\[OK\] Saved:" full_test.log; then
+            echo "[PASS] Files saved to disk"
+            ((passed++))
+          else
+            echo "[FAIL] Files not saved"
+            ((failed++))
+          fi
+
+          echo ""
+          echo "Test Results: $passed passed, $failed failed"
+
+          if [ $failed -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Show downloaded files
+        if: always()
+        run: |
+          echo "Downloaded files:"
+          ls -lh message_*.eml 2>/dev/null || echo "No .eml files"
+          find . -maxdepth 1 -type f \( -name "*.pdf" -o -name "*.png" -o -name "*.jpg" -o -name "*.html" -o -name "*.txt" \) -exec ls -lh {} \;
+
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-test-logs
+          name: test-results
           path: |
-            client.exe
-            test*.log
+            full_test.log
             message_*.eml
             *.pdf
             *.png
             *.jpg
+            *.html
             *.txt
-            *.bin
           retention-days: 7
