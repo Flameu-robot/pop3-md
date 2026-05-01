@@ -23,19 +23,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 
-#ifndef strcasestr
-static char *strcasestr(const char *haystack, const char *needle)
-{
-    size_t needle_len = strlen(needle);
-    for (; *haystack; haystack++)
-        if (strncasecmp(haystack, needle, needle_len) == 0)
-            return (char *)haystack;
-    return NULL;
-}
+#ifdef _WIN32
+    static char *strcasestr(const char *haystack, const char *needle)
+    {
+        size_t needle_len = strlen(needle);
+        for (; *haystack; haystack++)
+            if (strncasecmp(haystack, needle, needle_len) == 0)
+                return (char *)haystack;
+        return NULL;
+    }
+    #define BUFFER_LINE_MAX 2048
+#else
+    #define BUFFER_LINE_MAX 2048
 #endif
 
-#define LINE_MAX   2048
 #define GMAIL_HOST "pop.gmail.com"
 #define GMAIL_PORT 995
 
@@ -164,7 +167,7 @@ static int recv_line(Conn *c, char *buf, int max)
 
 static int send_cmd(Conn *c, const char *cmd)
 {
-    char buf[LINE_MAX];
+    char buf[BUFFER_LINE_MAX];
     int n = snprintf(buf, sizeof(buf) - 2, "%s", cmd);
     buf[n++] = '\r';
     buf[n++] = '\n';
@@ -368,7 +371,7 @@ static void parse_mime(const char *raw, size_t raw_len,
 
 static int pop3_user(Conn *c, const char *user)
 {
-    char cmd[LINE_MAX], resp[LINE_MAX];
+    char cmd[BUFFER_LINE_MAX], resp[BUFFER_LINE_MAX];
     snprintf(cmd, sizeof(cmd), "USER %s", user);
     if (send_cmd(c, cmd) < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
@@ -377,7 +380,7 @@ static int pop3_user(Conn *c, const char *user)
 
 static int pop3_pass(Conn *c, const char *pass)
 {
-    char cmd[LINE_MAX], resp[LINE_MAX];
+    char cmd[BUFFER_LINE_MAX], resp[BUFFER_LINE_MAX];
     snprintf(cmd, sizeof(cmd), "PASS %s", pass);
     if (send_cmd(c, cmd) < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
@@ -386,7 +389,7 @@ static int pop3_pass(Conn *c, const char *pass)
 
 static int pop3_stat(Conn *c, int *count, size_t *bytes)
 {
-    char resp[LINE_MAX];
+    char resp[BUFFER_LINE_MAX];
     if (send_cmd(c, "STAT") < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
     if (!is_ok(resp)) return -1;
@@ -398,7 +401,7 @@ static int pop3_stat(Conn *c, int *count, size_t *bytes)
 
 static int pop3_list(Conn *c)
 {
-    char resp[LINE_MAX];
+    char resp[BUFFER_LINE_MAX];
     if (send_cmd(c, "LIST") < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
     if (!is_ok(resp)) return -1;
@@ -415,7 +418,7 @@ static int pop3_list(Conn *c)
 
 static int pop3_retr(Conn *c, int msg_id, char **out_buf, size_t *out_len)
 {
-    char cmd[LINE_MAX], resp[LINE_MAX];
+    char cmd[BUFFER_LINE_MAX], resp[BUFFER_LINE_MAX];
     snprintf(cmd, sizeof(cmd), "RETR %d", msg_id);
     printf("\n>> Downloading message #%d...\n", msg_id);
     if (send_cmd(c, cmd) < 0) return -1;
@@ -514,7 +517,7 @@ static void show_message(int msg_id, const char *raw, size_t raw_len)
 static void pop3_quit(Conn *c)
 {
     send_cmd(c, "QUIT");
-    char resp[LINE_MAX];
+    char resp[BUFFER_LINE_MAX];
     recv_line(c, resp, sizeof(resp));
 }
 
@@ -559,7 +562,7 @@ int main(int argc, char *argv[])
     if (ssl_connect(&conn, GMAIL_HOST, GMAIL_PORT) < 0)
         return 1;
 
-    char resp[LINE_MAX];
+    char resp[BUFFER_LINE_MAX];
     printf("Waiting for greeting...\n");
     if (recv_line(&conn, resp, sizeof(resp)) < 0) {
         fprintf(stderr, "[ERROR] No greeting\n");
