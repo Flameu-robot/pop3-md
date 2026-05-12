@@ -7,7 +7,7 @@ sudo apt-get update
 sudo apt-get install -y libssl-dev
 
 # 3. 
-gcc -Wall -Wextra -o client src/client.c -lssl -lcrypto
+gcc -Wall -Wextra -o client client.c -lssl -lcrypto
 
 # 4.
-./client xxx@gmail.com "xxxx xxxx xxxx xxxx"
+./client xxx@mail.ru "xxxx xxxx xxxx xxxx"

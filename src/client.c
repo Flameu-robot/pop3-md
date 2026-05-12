@@ -39,8 +39,8 @@
     #define BUFFER_LINE_MAX 2048
 #endif
 
-#define GMAIL_HOST "pop.gmail.com"
-#define GMAIL_PORT 995
+#define POP3_HOST "pop.mail.ru"
+#define POP3_PORT 995
 
 typedef struct {
     sock_t   fd;
@@ -375,6 +375,7 @@ static int pop3_user(Conn *c, const char *user)
     snprintf(cmd, sizeof(cmd), "USER %s", user);
     if (send_cmd(c, cmd) < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
+    
     return is_ok(resp) ? 0 : -1;
 }
 
@@ -384,6 +385,7 @@ static int pop3_pass(Conn *c, const char *pass)
     snprintf(cmd, sizeof(cmd), "PASS %s", pass);
     if (send_cmd(c, cmd) < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
+    
     return is_ok(resp) ? 0 : -1;
 }
 
@@ -469,7 +471,7 @@ static void show_message(int msg_id, const char *raw, size_t raw_len)
 
     parse_mime(raw, raw_len, subject, from, parts, &nparts);
 
-    printf("\n====== Message #%d ======\n", msg_id);
+    printf("\n Message #%d\n", msg_id);
     printf("From   : %s\n", from);
     printf("Subject: %s\n", subject);
     printf("Parts  : %d\n\n", nparts);
@@ -523,11 +525,9 @@ static void pop3_quit(Conn *c)
 
 static void show_menu(void)
 {
-    printf("\n==============================\n");
     printf("  [l] - List messages\n");
     printf("  [d] - Download message\n");
     printf("  [q] - Quit\n");
-    printf("==============================\n");
     printf("Choice: ");
 }
 
@@ -536,8 +536,6 @@ int main(int argc, char *argv[])
     if (argc < 3) {
         printf("Usage: %s <user@gmail.com> <app_password>\n\n", argv[0]);
         printf("Setup:\n");
-        printf("  1. POP3: https://mail.google.com/mail/u/0/#settings/fwdandpop\n");
-        printf("  2. Pass: https://myaccount.google.com/apppasswords\n");
         return 1;
     }
 
@@ -549,17 +547,14 @@ int main(int argc, char *argv[])
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
 
-    printf("=======================================\n");
-    printf(" POP3 Client - Gmail SSL (Interactive)\n");
-    printf("=======================================\n");
+    printf(" POP3 Client - Mail.ru SSL\n");
     printf(" User: %s\n", user);
-    printf("=======================================\n\n");
 
     Conn conn;
     memset(&conn, 0, sizeof(conn));
     conn.fd = SOCK_INVALID;
 
-    if (ssl_connect(&conn, GMAIL_HOST, GMAIL_PORT) < 0)
+    if (ssl_connect(&conn, POP3_HOST, POP3_PORT) < 0)
         return 1;
 
     char resp[BUFFER_LINE_MAX];
@@ -574,7 +569,6 @@ int main(int argc, char *argv[])
     printf("Authentication...\n");
     if (pop3_user(&conn, user) < 0 || pop3_pass(&conn, pass) < 0) {
         fprintf(stderr, "[ERROR] Auth failed\n");
-        fprintf(stderr, "Get password: https://myaccount.google.com/apppasswords\n");
         return 1;
     }
     printf("[OK] Authenticated\n");
