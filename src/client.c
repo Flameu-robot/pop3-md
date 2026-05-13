@@ -1,5 +1,4 @@
 #ifdef _WIN32
-    #define _WIN32_WINNT 0x0600
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
@@ -23,22 +22,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <limits.h>
 
 #ifdef _WIN32
-    static char *strcasestr(const char *haystack, const char *needle)
+    static char *strcasestr(const char *str, const char *sub)
     {
-        size_t needle_len = strlen(needle);
-        for (; *haystack; haystack++)
-            if (strncasecmp(haystack, needle, needle_len) == 0)
-                return (char *)haystack;
+        size_t sub_len = strlen(sub);
+        for (; *str; str++)
+            if (strncasecmp(str, sub, sub_len) == 0)
+                return (char *)str;
         return NULL;
     }
-    #define BUFFER_LINE_MAX 2048
-#else
-    #define BUFFER_LINE_MAX 2048
 #endif
 
+#define BUFFER_LINE_MAX 2048
 #define POP3_HOST "pop.mail.ru"
 #define POP3_PORT 995
 
@@ -88,10 +84,10 @@ static int ssl_connect(Conn *c, const char *host, int port)
 
     c->fd = tcp_connect(host, port);
     if (c->fd == SOCK_INVALID) {
-        fprintf(stderr, "[ERROR] TCP connect failed\n");
+        fprintf(stderr, "ERROR: TCP connect failed\n");
         return -1;
     }
-    printf("[OK] TCP connected\n");
+    printf("TCP connected\n");
 
 #ifdef _WIN32
     DWORD tv = 20000;
@@ -103,39 +99,30 @@ static int ssl_connect(Conn *c, const char *host, int port)
     setsockopt(c->fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
 
-    SSL_library_init();
-    SSL_load_error_strings();
-    OpenSSL_add_all_algorithms();
-
     c->ctx = SSL_CTX_new(TLS_client_method());
     if (!c->ctx) {
-        fprintf(stderr, "[ERROR] SSL_CTX_new failed\n");
         sock_close(c->fd);
         return -1;
     }
 
-    SSL_CTX_set_verify(c->ctx, SSL_VERIFY_NONE, NULL);
-
     c->ssl = SSL_new(c->ctx);
     if (!c->ssl) {
-        fprintf(stderr, "[ERROR] SSL_new failed\n");
         SSL_CTX_free(c->ctx);
         sock_close(c->fd);
         return -1;
     }
 
-    SSL_set_tlsext_host_name(c->ssl, host);
     SSL_set_fd(c->ssl, (int)c->fd);
 
     if (SSL_connect(c->ssl) != 1) {
-        fprintf(stderr, "[ERROR] SSL handshake failed\n");
+        fprintf(stderr, "ERROR: SSL failed\n");
         SSL_free(c->ssl);
         SSL_CTX_free(c->ctx);
         sock_close(c->fd);
         return -1;
     }
 
-    printf("[OK] SSL: %s, %s\n", SSL_get_version(c->ssl), SSL_get_cipher(c->ssl));
+    printf("SSL: %s, %s\n", SSL_get_version(c->ssl), SSL_get_cipher(c->ssl));
     return 0;
 }
 
@@ -198,7 +185,7 @@ static unsigned char *b64_decode(const char *in, size_t in_len, size_t *out_len)
 {
     char *clean = (char *)malloc(in_len + 4);
     if (!clean) return NULL;
-    
+
     size_t cl = 0;
     for (size_t i = 0; i < in_len; i++)
         if (!isspace((unsigned char)in[i]))
@@ -256,11 +243,11 @@ static void get_param(const char *hval, const char *param, char *out, size_t max
     snprintf(search, sizeof(search), "%s=", param);
     const char *p = strcasestr(hval, search);
     if (!p) { out[0] = '\0'; return; }
-    
+
     p += strlen(search);
     int q = (*p == '"');
     if (q) p++;
-    
+
     size_t i = 0;
     while (*p && i < max - 1) {
         if (q && *p == '"') break;
@@ -375,7 +362,6 @@ static int pop3_user(Conn *c, const char *user)
     snprintf(cmd, sizeof(cmd), "USER %s", user);
     if (send_cmd(c, cmd) < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
-    
     return is_ok(resp) ? 0 : -1;
 }
 
@@ -385,7 +371,6 @@ static int pop3_pass(Conn *c, const char *pass)
     snprintf(cmd, sizeof(cmd), "PASS %s", pass);
     if (send_cmd(c, cmd) < 0) return -1;
     if (recv_line(c, resp, sizeof(resp)) < 0) return -1;
-    
     return is_ok(resp) ? 0 : -1;
 }
 
@@ -497,7 +482,7 @@ static void show_message(int msg_id, const char *raw, size_t raw_len)
                 if (f) {
                     fwrite(dec, 1, dec_len, f);
                     fclose(f);
-                    printf("  [OK] Saved: %s\n\n", p->filename);
+                    printf("Saved: %s\n\n", p->filename);
                 }
                 free(dec);
             }
@@ -506,7 +491,7 @@ static void show_message(int msg_id, const char *raw, size_t raw_len)
             if (f) {
                 fwrite(p->data, 1, p->data_len, f);
                 fclose(f);
-                printf("  [OK] Saved: %s\n\n", p->filename);
+                printf("Saved: %s\n\n", p->filename);
             }
         }
     }
@@ -525,17 +510,16 @@ static void pop3_quit(Conn *c)
 
 static void show_menu(void)
 {
-    printf("  [l] - List messages\n");
-    printf("  [d] - Download message\n");
-    printf("  [q] - Quit\n");
+    printf("    [l] - List messages\n");
+    printf("    [d] - Download message\n");
+    printf("    [q] - Quit\n");
     printf("Choice: ");
 }
 
 int main(int argc, char *argv[])
 {
     if (argc < 3) {
-        printf("Usage: %s <user@gmail.com> <app_password>\n\n", argv[0]);
-        printf("Setup:\n");
+        printf("Usage: %s <user@mail.ru> <app_password>\n", argv[0]);
         return 1;
     }
 
@@ -560,26 +544,26 @@ int main(int argc, char *argv[])
     char resp[BUFFER_LINE_MAX];
     printf("Waiting for greeting...\n");
     if (recv_line(&conn, resp, sizeof(resp)) < 0) {
-        fprintf(stderr, "[ERROR] No greeting\n");
+        fprintf(stderr, "ERROR: No greeting\n");
         return 1;
     }
 
-    printf("[OK] Connected\n\n");
+    printf("Connected\n\n");
 
     printf("Authentication...\n");
     if (pop3_user(&conn, user) < 0 || pop3_pass(&conn, pass) < 0) {
-        fprintf(stderr, "[ERROR] Auth failed\n");
+        fprintf(stderr, "ERROR: Auth failed\n");
         return 1;
     }
-    printf("[OK] Authenticated\n");
+    printf("Authenticated\n");
 
     int total_count = 0;
     size_t total_size = 0;
     if (pop3_stat(&conn, &total_count, &total_size) < 0) {
-        fprintf(stderr, "[ERROR] STAT failed\n");
+        fprintf(stderr, "ERROR: STAT failed\n");
         return 1;
     }
-    printf("[OK] Mailbox: %d messages, %zu bytes\n", total_count, total_size);
+    printf("Mailbox: %d messages, %zu bytes\n", total_count, total_size);
 
     char choice[32];
     while (1) {
@@ -588,7 +572,7 @@ int main(int argc, char *argv[])
 
         if (choice[0] == 'l' || choice[0] == 'L') {
             if (pop3_list(&conn) < 0) {
-                fprintf(stderr, "[ERROR] LIST failed\n");
+                fprintf(stderr, "ERROR: LIST failed\n");
                 break;
             }
         }
@@ -598,14 +582,14 @@ int main(int argc, char *argv[])
             int msg_id = atoi(choice);
 
             if (msg_id < 1 || msg_id > total_count) {
-                printf("[ERROR] Invalid ID\n");
+                printf("ERROR: Invalid ID\n");
                 continue;
             }
 
             char *raw = NULL;
             size_t raw_len = 0;
             if (pop3_retr(&conn, msg_id, &raw, &raw_len) < 0) {
-                fprintf(stderr, "[ERROR] RETR failed\n");
+                fprintf(stderr, "ERROR: RETR failed\n");
                 continue;
             }
 
@@ -625,7 +609,7 @@ int main(int argc, char *argv[])
             break;
         }
         else {
-            printf("[ERROR] Invalid choice\n");
+            printf("ERROR: Invalid choice\n");
         }
     }
 
@@ -635,6 +619,5 @@ int main(int argc, char *argv[])
 #ifdef _WIN32
     WSACleanup();
 #endif
-    printf("[OK] Goodbye\n");
     return 0;
 }
